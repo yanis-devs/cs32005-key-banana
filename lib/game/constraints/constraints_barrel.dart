@@ -1,6 +1,6 @@
 // constraints_barrel.dart
 
-export 'combined.dart';
+export 'combined_constraints.dart';
 export 'constraint.dart';
 export 'contains.dart';
 export 'ends_with.dart';

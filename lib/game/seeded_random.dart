@@ -6,11 +6,25 @@ class SeededRandom {
     int? _currentState;
     int? _previousState;
     final modulus = pow(2, 32).toInt();
+    // debug part
+    final int initialSeed;
+    bool debug = false;
 
+    SeededRandom._int(int seed) : initialSeed = seed {
+      _previousState = seed;
+    }
+
+    // Lets main inspect the state without advancing the RNG.
+    int get state => _previousState ?? initialSeed;
+    //debug part ends
     
+
+    //this is the original, commented out
+    /*
     SeededRandom._int(int seed) {
         _previousState = seed;
     }
+    */
 
     
     static Future<SeededRandom> create() async {
@@ -46,7 +60,30 @@ class SeededRandom {
         return min + (random % targetRange);
     }
 
-    
+    //debug
+    int getRandom(int min, int max) {
+      if (min > max) {
+        throw ArgumentError('min cannot be greater than max');
+      }
+
+      final int targetRange = max - min + 1;
+      final int raw = generateRandom();
+
+      // Scale the entire random value instead of using its weakest bits.
+      final int result = min + (raw * targetRange ~/ modulus);
+
+      if (debug) {
+        print(
+          '[RNG] raw=$raw | range=[$min, $max] | output=$result'
+        );
+      }
+
+      return result;
+    }
+    //debug ends
+
+    //this is original
+    /*
     int getRandom(int min, int max) {
         int result = cleanRandom(generateRandom(), min, max);
 
@@ -56,4 +93,5 @@ class SeededRandom {
 
         return result;
     }
+    */
 }

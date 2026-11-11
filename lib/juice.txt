@@ -1,0 +1,1208 @@
+PYJUICER EXPORT
+ROOT: C:\Users\3bloo\Documents\A-Priority\Skills\Flutter\pantry-app\lib
+GENERATED: 2026-11-11 11:08:14 GMT Standard Time
+
+================================================================================
+FOLDER: ./
+================================================================================
+
+FILE: app.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: main.dart
+--------------------------------------------------------------------------------
+import 'package:flutter/material.dart';
+import 'game/random_test_screen.dart'; // Import your test screen file
+import 'data/dictionary_service.dart';
+import 'game/challenge_generator.dart';
+
+import 'package:flutter/material.dart';
+import 'theme/app_theme.dart';
+import 'screens/mock_round_screen.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Word Game',
+      theme: AppTheme.light,
+      home: const MockRoundScreen(),
+    );
+  }
+}
+
+================================================================================
+FOLDER: data/
+================================================================================
+
+FILE: data/auth_repository.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: data/dictionary_service.dart
+--------------------------------------------------------------------------------
+import 'package:flutter/services.dart';
+import 'dart:convert';
+import 'package:pantry_app/game/constraints/constraint.dart';
+
+class DictionaryService {
+
+    final Set<String> words;
+    DictionaryService._(this.words);
+
+    static Future<DictionaryService> create() async {
+        final raw = await rootBundle.loadString('assets/words.txt');
+        Set<String> words = LineSplitter.split(raw)
+        .map((word) => word.toLowerCase().trim())
+        .where((word) => word.isNotEmpty)
+        .toSet();
+        return DictionaryService._(words);
+    }
+
+    bool isWordValid(String word) => words.contains(word);
+    
+    bool isChallengeValid(Constraint constraint){
+        int wordCount = 0;
+        int minSize = 100;
+
+        for (String word in words){
+            if(constraint.isAccepted(word)) wordCount++;
+            if(wordCount == minSize) return true;
+        }
+        return false;
+    }
+}
+
+
+
+
+
+
+FILE: data/leaderboard_repository.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: data/stats_repository.dart
+--------------------------------------------------------------------------------
+[empty]
+
+================================================================================
+FOLDER: game/
+================================================================================
+
+FILE: game/challenge_generator.dart
+--------------------------------------------------------------------------------
+
+import '../data/dictionary_service.dart';
+import 'constraints/constraints_barrel.dart';
+import 'seeded_random.dart';
+
+class ChallengeGenerator {
+  static const int maxAttempts = 20;
+
+  String _letters = 'etaoinshrdlu';
+
+  final SeededRandom gen;
+  final DictionaryService dictionary;
+
+  ChallengeGenerator._(this.gen, this.dictionary);
+
+  static Future<ChallengeGenerator> create(
+    DictionaryService dictionary,
+  ) async {
+    final rng = await SeededRandom.create();
+    return ChallengeGenerator._(rng, dictionary);
+  }
+
+  late final List<Constraint Function()> pool = [
+    () => ConstraintContains(getLetter()),
+    () => ConstraintExcludes(getLetter()),
+    () => ConstraintStartsWith(getLetter()),
+    () => ConstraintEndsWith(getLetter()),
+  ];
+
+  String getLetter() {
+    return _letters[gen.getRandom(0, _letters.length - 1)];
+  }
+
+  Constraint getChallenge(int difficulty) {
+    switch (difficulty) {
+      case 1:
+        _letters = 'etaoinshrdlu';
+
+        return _createValidChallenge(
+          createChallenge,
+          () => ConstraintContains('e'),
+        );
+
+      case 2:
+        _letters = 'abcdefghijklmnopqrstuvwxyz';
+
+        return _createValidChallenge(
+          _createCombinedChallenge,
+          () => CombinedConstraints([
+            ConstraintContains('e'),
+            ConstraintContains('t'),
+          ]),
+        );
+
+      default:
+        throw ArgumentError.value(
+          difficulty,
+          'difficulty',
+          'Difficulty must be 1 or 2.',
+        );
+    }
+  }
+
+  Constraint _createValidChallenge(
+    Constraint Function() buildCandidate,
+    Constraint Function() buildFallback,
+  ) {
+    // Try at most maxAttempts randomly generated candidates.
+    for (var attempt = 0; attempt < maxAttempts; attempt++) {
+      final candidate = buildCandidate();
+
+      if (dictionary.isChallengeValid(candidate)) {
+        return candidate;
+      }
+    }
+
+    // All random candidates failed validation.
+    // Check the fallback rather than silently returning an invalid one.
+    final fallback = buildFallback();
+
+    if (!dictionary.isChallengeValid(fallback)) {
+      throw StateError(
+        'Could not generate a valid challenge after '
+        '$maxAttempts attempts, and the fallback is also invalid.',
+      );
+    }
+
+    return fallback;
+  }
+
+  Constraint _createCombinedChallenge() {
+    // Create a fresh list for every combination.
+    return CombinedConstraints([
+      createChallenge(),
+      createChallenge(),
+    ]);
+  }
+
+  Constraint createChallenge() {
+    final random = gen.getRandom(0, pool.length - 1);
+    final picked = pool[random];
+
+    return picked();
+  }
+}
+
+FILE: game/date_service.dart
+--------------------------------------------------------------------------------
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+Future<String> fetchDate() async {
+  try {
+    final address = Uri.parse('https://timeapi.io/api/v1/time/current/utc');
+
+    final response = await http.get(
+      address, 
+      headers: {'accept': '*/*'},
+    );
+
+    if (response.statusCode == 200) {
+      final Map<String, dynamic> data = jsonDecode(response.body);
+      final String utcTimeString = data['utc_time'];
+
+      // 1. Grab date part: "2026-10-10"
+      // 2. Strip dashes: "20261010"
+      return utcTimeString.split('T')[0].replaceAll('-', '');
+    }
+  } catch (e) {
+    print('Failed to reach time server: $e');
+  }
+
+  // Fallback: If offline or failed, grab device time, format it, and clean it too!
+  print('Using fallback device time.');
+  final DateTime now = DateTime.now().toUtc();
+  
+  // Convert device DateTime to ISO string, grab the date part, and strip dashes
+  final String deviceIsoString = now.toIso8601String();
+  return deviceIsoString.split('T')[0].replaceAll('-', '');
+}
+
+FILE: game/game_session.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: game/random_test_screen.dart
+--------------------------------------------------------------------------------
+import 'package:flutter/material.dart';
+import 'seeded_random.dart'; // Make sure this points to your file
+
+class RandomTestScreen extends StatefulWidget {
+  const RandomTestScreen({super.key});
+
+  @override
+  State<RandomTestScreen> createState() => _RandomTestScreenState();
+}
+
+class _RandomTestScreenState extends State<RandomTestScreen> {
+  // Declare a variable to hold our initialized class
+  late Future<SeededRandom> _randomGeneratorFuture;
+  SeededRandom? _seededRandom;
+  int? _currentRandomNumber;
+
+  @override
+  void initState() {
+    super.initState();
+    // 1. Start loading the random generator when the widget opens
+    _randomGeneratorFuture = SeededRandom.create();
+  }
+
+  void _generateNewNumber() {
+    if (_seededRandom != null) {
+      setState(() {
+        // 2. Call your synchronous API method!
+        _currentRandomNumber = _seededRandom!.getRandom(1, 100);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Test SeededRandom')),
+      body: Center(
+        child: FutureBuilder<SeededRandom>(
+          future: _randomGeneratorFuture,
+          builder: (context, snapshot) {
+            // While it's fetching the date/seed, show a loading spinner
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              const CircularProgressIndicator();
+            }
+            
+            // If something went wrong
+            if (snapshot.hasError) {
+              return Text('Error initializing: ${snapshot.error}');
+            }
+
+            // Once it's ready, save the instance and show the UI
+            if (snapshot.hasData) {
+              _seededRandom = snapshot.data;
+
+              return Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    _currentRandomNumber == null 
+                        ? 'Press the button to roll!' 
+                        : 'Random Number: $_currentRandomNumber',
+                    style: const TextStyle(fontSize: 24),
+                  ),
+                  const SizedBox(height: 20),
+                  ElevatedButton(
+                    onPressed: _generateNewNumber,
+                    child: const Text('Generate Random (1-100)'),
+                  ),
+                ],
+              );
+            }
+
+            return const SizedBox();
+          },
+        ),
+      ),
+    );
+  }
+}
+
+FILE: game/round_timer.dart
+--------------------------------------------------------------------------------
+import 'dart:async';
+
+class RoundTimer {
+  final void Function() onRoundEnded;
+
+  RoundTimer(this.onRoundEnded);
+
+  DateTime? currentTime;
+  DateTime? deadline;
+  Timer? _timer;
+
+  void startTimer() {
+    _timer?.cancel();
+
+    currentTime = DateTime.now();
+    deadline = currentTime!.add(
+      const Duration(seconds: 10),
+    );
+
+    _timer = Timer(const Duration(seconds: 10), () {
+      onRoundEnded();
+    });
+  }
+
+  double? whatTimeRemains() {
+    if (deadline == null) {
+      return null;
+    }
+
+    final remaining = deadline!.difference(DateTime.now());
+
+    return remaining.inMicroseconds /
+        Duration.microsecondsPerSecond;
+  }
+
+  void cancelTimer() {
+    _timer?.cancel();
+  }
+}
+
+FILE: game/scoring.dart
+--------------------------------------------------------------------------------
+class Scoring {
+  double calculateWordScore(String word, double secondsRemaining) =>
+      (10 * word.length) + (2 * secondsRemaining);
+
+  double calculateFinalScore(List<double> wordScores) =>
+      wordScores.fold(0.0, (sum, score) => sum + (score / 10));
+}
+
+FILE: game/seeded_random.dart
+--------------------------------------------------------------------------------
+
+import 'date_service.dart';
+import 'dart:math';
+
+class SeededRandom {
+    int? _currentState;
+    int? _previousState;
+    final modulus = pow(2, 32).toInt();
+    // debug part
+    final int initialSeed;
+    bool debug = false;
+
+    SeededRandom._int(int seed) : initialSeed = seed {
+      _previousState = seed;
+    }
+
+    // Lets main inspect the state without advancing the RNG.
+    int get state => _previousState ?? initialSeed;
+    //debug part ends
+    
+
+    //this is the original, commented out
+    /*
+    SeededRandom._int(int seed) {
+        _previousState = seed;
+    }
+    */
+
+    
+    static Future<SeededRandom> create() async {
+        int seed;
+        try {
+            final stringDate = await fetchDate();
+            seed = int.parse(stringDate);
+        } catch (e) {
+            seed = DateTime.now().millisecondsSinceEpoch % 1000000;
+        }
+
+        return SeededRandom._int(seed);
+    }
+
+    int generateRandom() {
+        final multiplier = 1664525;
+        final increment = 1013904223;
+
+        _currentState = (multiplier * _previousState! + increment) % modulus;
+        _previousState = _currentState;
+
+        return _currentState!;
+    }
+
+    int cleanRandom(int random, int min, int max) {
+        int targetRange = max - min + 1;
+        int acceptanceLimit = modulus - (modulus % targetRange);
+
+        if (random >= acceptanceLimit) {
+            return -1;
+        }
+
+        return min + (random % targetRange);
+    }
+
+    //debug
+    int getRandom(int min, int max) {
+      if (min > max) {
+        throw ArgumentError('min cannot be greater than max');
+      }
+
+      final int targetRange = max - min + 1;
+      final int raw = generateRandom();
+
+      // Scale the entire random value instead of using its weakest bits.
+      final int result = min + (raw * targetRange ~/ modulus);
+
+      if (debug) {
+        print(
+          '[RNG] raw=$raw | range=[$min, $max] | output=$result'
+        );
+      }
+
+      return result;
+    }
+    //debug ends
+
+    //this is original
+    /*
+    int getRandom(int min, int max) {
+        int result = cleanRandom(generateRandom(), min, max);
+
+        while (result == -1) {
+            result = cleanRandom(generateRandom(), min, max);
+        }
+
+        return result;
+    }
+    */
+}
+
+================================================================================
+FOLDER: game/constraints/
+================================================================================
+
+FILE: game/constraints/combined_constraints.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class CombinedConstraints extends Constraint {
+
+  final List<Constraint> constraints;
+
+  CombinedConstraints(this.constraints);
+
+  @override
+  String get description {
+    if (constraints.length != 2) return constraints.map((c) => c.description).join(' and ');
+
+    final first = constraints[0].description;
+    // Replace the prefix "Word must " with an empty string on the second rule
+    final second = constraints[1].description.replaceFirst('Word must ', '');
+
+    return '$first and $second';
+  }
+
+  @override
+  bool checkConstraint(String word) {
+    return constraints.every((c) => c.checkConstraint(word));
+  }
+}
+
+FILE: game/constraints/constraint.dart
+--------------------------------------------------------------------------------
+
+abstract class Constraint {
+
+  // A description to display to the player.
+    String get description;
+
+    bool isAccepted(String word){
+        String cleanedWord = word.trim().toLowerCase();
+
+        if (cleanedWord.isEmpty) return false;
+        
+        return checkConstraint(cleanedWord);
+    }
+
+  // Checks whether a word satisfies this constraint.
+    bool checkConstraint(String word);
+
+
+}
+
+FILE: game/constraints/constraints_barrel.dart
+--------------------------------------------------------------------------------
+// constraints_barrel.dart
+
+export 'combined_constraints.dart';
+export 'constraint.dart';
+export 'contains.dart';
+export 'ends_with.dart';
+export 'excludes.dart';
+export 'length_rule.dart';
+export 'starts_with.dart';
+
+FILE: game/constraints/contains.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class ConstraintContains extends Constraint {
+
+  final String letter;
+
+  ConstraintContains(this.letter);
+
+  @override
+  String get description => "Word must contain $letter";
+
+  @override
+  bool checkConstraint(String word){
+    return word.contains(letter.trim().toLowerCase());
+  }
+}
+
+FILE: game/constraints/ends_with.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class ConstraintEndsWith extends Constraint {
+
+  final String letter;
+
+  ConstraintEndsWith(this.letter);
+
+  @override
+  String get description => "Word must end with $letter";
+
+  @override
+  bool checkConstraint(String word){
+    return word[word.length - 1] == letter.trim().toLowerCase();
+  }
+}
+
+FILE: game/constraints/excludes.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class ConstraintExcludes extends Constraint {
+
+  final String letter;
+
+  ConstraintExcludes(this.letter);
+
+  @override
+  String get description => "Word must exclude $letter";
+
+  @override
+  bool checkConstraint(String word){
+    return !word.contains(letter.toLowerCase());
+  }
+}
+
+FILE: game/constraints/length_rule.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class ConstraintLength extends Constraint {
+
+  final int length;
+
+  ConstraintLength(this.length);
+
+  @override
+  String get description => "Word must have $length letters";
+
+  @override
+  bool checkConstraint(String word){
+    return word.length == length;
+  }
+}
+
+FILE: game/constraints/starts_with.dart
+--------------------------------------------------------------------------------
+import 'constraint.dart';
+
+class ConstraintStartsWith extends Constraint {
+
+  final String letter;
+
+  ConstraintStartsWith(this.letter);
+
+  @override
+  String get description => "Word must start with $letter";
+
+  @override
+  bool checkConstraint(String word){
+    return word[0] == letter.trim().toLowerCase();
+  }
+}
+
+================================================================================
+FOLDER: game/demon/
+================================================================================
+
+FILE: game/demon/demon_session.dart
+--------------------------------------------------------------------------------
+[empty]
+
+================================================================================
+FOLDER: screens/
+================================================================================
+
+FILE: screens/daily_game_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/home_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/leaderboard_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/login_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/mock_round_screen.dart
+--------------------------------------------------------------------------------
+// Suggested location: lib/screens/mock_round_screen.dart
+//
+// A visual-only prototype of the in-round screen. It uses fake constraints and
+// stores words locally, so it does not depend on GameSession.
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import '../theme/app_theme.dart';
+
+// ---- Tuning knobs: change these to adjust the feel -------------------------
+const int kTotalRounds = 7;
+const double kRoundSeconds = 10;
+
+/// How long the neutral "word captured" cue plays.
+const Duration kCaptureCue = Duration(milliseconds: 450);
+
+/// Total pause between rounds, measured from the moment the word is captured.
+/// The new timer only starts after this, so the pause never costs player time.
+const Duration kRoundPause = Duration(milliseconds: 1200);
+
+/// Delay before reading the box after the timer hits zero, so the keyboard can
+/// commit the final keystroke.
+const Duration kAutoSubmitDelay = Duration(milliseconds: 300);
+// -----------------------------------------------------------------------------
+
+const List<String> _mockConstraints = [
+  'Word must start with C',
+  'Word must have 5 letters',
+  'Word must contain Z',
+  'Word must end with T',
+  'Word must exclude E',
+  'Word must start with B',
+  'Word must have 7 letters',
+];
+
+enum RoundPhase { playing, transitioning }
+
+class _RoundRecord {
+  _RoundRecord(this.constraint, this.word, this.secondsLeft);
+  final String constraint;
+  final String word;
+  final double secondsLeft;
+}
+
+class MockRoundScreen extends StatefulWidget {
+  const MockRoundScreen({super.key});
+
+  @override
+  State<MockRoundScreen> createState() => _MockRoundScreenState();
+}
+
+class _MockRoundScreenState extends State<MockRoundScreen>
+    with SingleTickerProviderStateMixin {
+  // Runs from 1.0 (full) down to 0.0 (time up). value * kRoundSeconds is the
+  // fractional number of seconds remaining, so the bar moves smoothly.
+  late final AnimationController _timer;
+
+  final TextEditingController _wordController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+
+  RoundPhase _phase = RoundPhase.playing;
+  int _round = 1;
+  bool _captured = false; // drives the neutral "captured" cue
+  final List<_RoundRecord> _records = [];
+
+  bool get _isPlaying => _phase == RoundPhase.playing;
+
+  String get _constraint =>
+      _mockConstraints[(_round - 1) % _mockConstraints.length];
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = AnimationController(
+      vsync: this,
+      duration: Duration(milliseconds: (kRoundSeconds * 1000).round()),
+      value: 1,
+    );
+    _timer.addStatusListener((status) {
+      if (status == AnimationStatus.dismissed) _onTimeout();
+    });
+    _timer.reverse();
+  }
+
+  @override
+  void dispose() {
+    _timer.dispose();
+    _wordController.dispose();
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  // ---- Round flow ----------------------------------------------------------
+
+  /// Manual submit. The guard plus the immediate phase change means a second
+  /// submission (button + timeout) is impossible, whatever the timing.
+  void _submit() {
+    if (!_isPlaying) return;
+    setState(() => _phase = RoundPhase.transitioning);
+    _timer.stop();
+    _finishRound(_timer.value * kRoundSeconds);
+  }
+
+  Future<void> _onTimeout() async {
+    if (!_isPlaying) return;
+    // Button greys out and typing is blocked immediately.
+    setState(() => _phase = RoundPhase.transitioning);
+    await Future.delayed(kAutoSubmitDelay);
+    if (!mounted) return;
+    _finishRound(0);
+  }
+
+  Future<void> _finishRound(double secondsLeft) async {
+    _records.add(
+      _RoundRecord(_constraint, _wordController.text.trim(), secondsLeft),
+    );
+
+    // Neutral cue, identical for every word: no right/wrong judgement.
+    setState(() => _captured = true);
+    await Future.delayed(kCaptureCue);
+    if (!mounted) return;
+
+    if (_round >= kTotalRounds) {
+      await _showResults();
+      return;
+    }
+
+    // Swap in the next round while the timer sits full and still.
+    setState(() {
+      _round++;
+      _captured = false;
+      _wordController.clear();
+    });
+    _timer.value = 1;
+
+    await Future.delayed(kRoundPause - kCaptureCue);
+    if (!mounted) return;
+
+    setState(() => _phase = RoundPhase.playing);
+    _timer.reverse();
+  }
+
+  void _restart() {
+    setState(() {
+      _records.clear();
+      _round = 1;
+      _captured = false;
+      _wordController.clear();
+      _phase = RoundPhase.playing;
+    });
+    _timer.value = 1;
+    _timer.reverse();
+  }
+
+  // ---- Dialogs -------------------------------------------------------------
+
+  Future<void> _confirmQuit() async {
+    final wasPlaying = _isPlaying;
+    if (wasPlaying) _timer.stop(); // pause the clock while the dialog is open
+
+    final quit = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Quit game?'),
+        content: const Text('Your progress this game will be lost.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep playing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Quit'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted) return;
+    if (quit == true) {
+      Navigator.of(context).maybePop();
+      return;
+    }
+    if (wasPlaying && _isPlaying) _timer.reverse();
+  }
+
+  Future<void> _showResults() async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        backgroundColor: Colors.white,
+        title: const Text('Game over (mock results)'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final r in _records)
+                ListTile(
+                  dense: true,
+                  title: Text(r.word.isEmpty ? '(empty)' : r.word),
+                  subtitle: Text(r.constraint),
+                  trailing: Text('${r.secondsLeft.toStringAsFixed(1)}s'),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Play again'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    _restart();
+  }
+
+  // ---- UI ------------------------------------------------------------------
+
+  @override
+  Widget build(BuildContext context) {
+    // Scaffold shrinks the body when the keyboard opens, so the content below
+    // is centred in the space above the keyboard automatically.
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildTopBar(context),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(child: _buildPlayArea(context)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          IconButton(
+            iconSize: 30,
+            icon: const Icon(Icons.close),
+            tooltip: 'Quit',
+            onPressed: _confirmQuit,
+          ),
+          Expanded(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 240),
+                child: AnimatedBuilder(
+                  animation: _timer,
+                  builder: (context, _) {
+                    final seconds = (_timer.value * kRoundSeconds).ceil();
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '$seconds',
+                          style: const TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: LinearProgressIndicator(
+                            value: _timer.value,
+                            minHeight: 12,
+                            color: AppColors.yellow,
+                            backgroundColor: AppColors.yellowSoft,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Round $_round / $kTotalRounds',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.inkMuted,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+          // Balances the X button so the timer stays truly centred.
+          const SizedBox(width: 48),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlayArea(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final maxBoxWidth = MediaQuery.of(context).size.width - 48;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Constraint text, directly above the box so it stays visible.
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 250),
+            child: Text(
+              _constraint,
+              key: ValueKey(_round),
+              textAlign: TextAlign.center,
+              style: textTheme.headlineMedium,
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          // Word box: pulses while the word is "captured".
+          AnimatedScale(
+            scale: _captured ? 0.94 : 1,
+            duration: const Duration(milliseconds: 150),
+            child: AnimatedOpacity(
+              opacity: _captured ? 0.55 : 1,
+              duration: const Duration(milliseconds: 150),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: 160, maxWidth: maxBoxWidth),
+                // IntrinsicWidth makes the box grow with the word length.
+                child: IntrinsicWidth(
+                  child: TextField(
+                    controller: _wordController,
+                    focusNode: _focusNode,
+                    autofocus: true,
+                    textAlign: TextAlign.center,
+                    style: textTheme.displaySmall,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    textCapitalization: TextCapitalization.none,
+                    textInputAction: TextInputAction.done,
+                    decoration: const InputDecoration(hintText: 'type here'),
+                    inputFormatters: [
+                      FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z]')),
+                      // Blocks typing between rounds WITHOUT readOnly/disabled.
+                      // Those would drop focus and make the keyboard slide
+                      // down and back up every round.
+                      TextInputFormatter.withFunction(
+                        (oldValue, newValue) =>
+                            _isPlaying ? newValue : oldValue,
+                      ),
+                    ],
+                    // onEditingComplete (not onSubmitted) keeps focus, so the
+                    // keyboard stays open after pressing its enter key.
+                    onEditingComplete: _submit,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // Greys out as soon as the timer ends or a word is submitted.
+          ElevatedButton(
+            onPressed: _isPlaying ? _submit : null,
+            child: const Text('Submit'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+FILE: screens/results_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/settings_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: screens/stats_screen.dart
+--------------------------------------------------------------------------------
+[empty]
+
+================================================================================
+FOLDER: services/
+================================================================================
+
+FILE: services/biometric_service.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: services/shake_service.dart
+--------------------------------------------------------------------------------
+[empty]
+
+================================================================================
+FOLDER: state/
+================================================================================
+
+FILE: state/auth_state.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: state/game_state.dart
+--------------------------------------------------------------------------------
+[empty]
+
+================================================================================
+FOLDER: theme/
+================================================================================
+
+FILE: theme/app_theme.dart
+--------------------------------------------------------------------------------
+// Suggested location: lib/theme/app_theme.dart
+import 'package:flutter/material.dart';
+
+/// All colours live here so the whole app can be re-skinned in one place.
+class AppColors {
+  AppColors._();
+
+  /// The app's signature colour.
+  static const Color yellow = Color(0xFFFFD60A);
+
+  /// A pale tint of the signature colour, used for track/background areas.
+  static const Color yellowSoft = Color.fromARGB(255, 255, 206, 149);
+
+  static const Color white = Colors.white;
+
+  /// Near-black for text. Softer than pure #000 but still very high contrast.
+  static const Color ink = Color(0xFF111111);
+
+  static const Color inkMuted = Color.fromARGB(255, 249, 249, 249);
+}
+
+class AppTheme {
+  AppTheme._();
+
+  static ThemeData get light {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: AppColors.yellow,
+      brightness: Brightness.light,
+    ).copyWith(
+      primary: AppColors.yellow,
+      onPrimary: AppColors.ink,
+      secondary: AppColors.yellow,
+      onSecondary: AppColors.ink,
+      surface: AppColors.white,
+      onSurface: AppColors.ink,
+    );
+
+    final base = ThemeData(useMaterial3: true, colorScheme: scheme);
+
+    final textTheme = base.textTheme
+        .apply(bodyColor: AppColors.ink, displayColor: AppColors.ink)
+        .copyWith(
+          // The constraint text ("Word must start with C").
+          headlineMedium: base.textTheme.headlineMedium?.copyWith(
+            fontSize: 32,
+            fontWeight: FontWeight.w800,
+            height: 1.15,
+            color: AppColors.ink,
+          ),
+          // What the player types.
+          displaySmall: base.textTheme.displaySmall?.copyWith(
+            fontSize: 36,
+            fontWeight: FontWeight.w700,
+            color: AppColors.ink,
+          ),
+        );
+
+    return base.copyWith(
+      scaffoldBackgroundColor: AppColors.white,
+      textTheme: textTheme,
+
+      // The word box: solid yellow, no border until focused.
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: AppColors.yellow,
+        hintStyle: const TextStyle(color: AppColors.inkMuted),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide.none,
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: BorderSide.none,
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: AppColors.ink, width: 2.5),
+        ),
+      ),
+
+      // Buttons: yellow with black text; clearly grey when disabled.
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.yellow,
+          foregroundColor: AppColors.ink,
+          disabledBackgroundColor: const Color(0xFFE8E8E8),
+          disabledForegroundColor: const Color(0xFFA0A0A0),
+          elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+          shape: const StadiumBorder(),
+          textStyle: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+}
+
+================================================================================
+FOLDER: widgets/
+================================================================================
+
+FILE: widgets/constraint_card.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: widgets/game_keyboard.dart
+--------------------------------------------------------------------------------
+[empty]
+
+FILE: widgets/timer_bar.dart
+--------------------------------------------------------------------------------
+[empty]
+
