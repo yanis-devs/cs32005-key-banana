@@ -1,6 +1,6 @@
 {
-    "name": "pantry_app",
-    "short_name": "pantry_app",
+    "name": "key_banana",
+    "short_name": "key_banana",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

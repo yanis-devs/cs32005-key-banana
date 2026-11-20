@@ -1,7 +1,5 @@
-
 import 'package:flutter_test/flutter_test.dart';
-import 'package:pantry_app/game/constraints/constraints_barrel.dart';
-
+import 'package:key_banana/game/constraints/constraints_barrel.dart';
 
 void main() {
   // ==========================================
@@ -151,49 +149,130 @@ void main() {
   });
 
   // ==========================================
-  // 5. CONSTRAINT LENGTH
+  // 5. CONSTRAINT COMBINED
   // ==========================================
-  group('ConstraintLength', () {
-    test('accepts a word with the required length', () {
-      final constraint = ConstraintLength(5);
+  group('CombinedConstraints', () {
+    test('two rules read as one sentence, dropping the second "Word must"', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
+
+      expect(constraint.description, 'Word must contain E and contain T');
+    });
+
+    test('works with different rule types in the description', () {
+      final constraint = CombinedConstraints([
+        ConstraintStartsWith('c'),
+        ConstraintEndsWith('t'),
+      ]);
+
+      expect(constraint.description, 'Word must start with C and end with T');
+    });
+
+    test('with other than two rules, full descriptions are joined', () {
+      // The game only builds pairs. This pins the current fallback behaviour.
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+        ConstraintStartsWith('s'),
+      ]);
+
+      expect(
+        constraint.description,
+        'Word must contain E and Word must contain T and '
+        'Word must start with S',
+      );
+    });
+
+    test('accepts a word that satisfies every rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
+
+      expect(constraint.isAccepted('tree'), isTrue);
+    });
+
+    test('rejects a word that satisfies only the first rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
+
+      expect(constraint.isAccepted('apple'), isFalse);
+    });
+
+    test('rejects a word that satisfies only the second rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
+
+      expect(constraint.isAccepted('cat'), isFalse);
+    });
+
+    test('rejects a word that satisfies neither rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
+
+      expect(constraint.isAccepted('banana'), isFalse);
+    });
+
+    test('rule order does not change the result', () {
+      final forward = CombinedConstraints([
+        ConstraintStartsWith('a'),
+        ConstraintEndsWith('e'),
+      ]);
+      final backward = CombinedConstraints([
+        ConstraintEndsWith('e'),
+        ConstraintStartsWith('a'),
+      ]);
+
+      for (final word in ['apple', 'apples', 'banana', 'axe']) {
+        expect(forward.isAccepted(word), backward.isAccepted(word));
+      }
+    });
+
+    test('combines a start rule and an end rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintStartsWith('a'),
+        ConstraintEndsWith('e'),
+      ]);
 
       expect(constraint.isAccepted('apple'), isTrue);
+      expect(constraint.isAccepted('apples'), isFalse);
+      expect(constraint.isAccepted('eagle'), isFalse);
     });
 
-    test('rejects a word that is too short', () {
-      final constraint = ConstraintLength(5);
+    test('combines an exclude rule with a contain rule', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('a'),
+        ConstraintExcludes('e'),
+      ]);
 
-      expect(constraint.isAccepted('pear'), isFalse);
+      expect(constraint.isAccepted('banana'), isTrue);
+      expect(constraint.isAccepted('apple'), isFalse);
     });
 
-    test('rejects a word that is too long', () {
-      final constraint = ConstraintLength(5);
+    test('ignores case and surrounding whitespace in the word', () {
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
 
-      expect(constraint.isAccepted('bananas'), isFalse);
+      expect(constraint.isAccepted('  TREE '), isTrue);
     });
 
     test('rejects an empty word', () {
-      final constraint = ConstraintLength(5);
+      final constraint = CombinedConstraints([
+        ConstraintContains('e'),
+        ConstraintContains('t'),
+      ]);
 
       expect(constraint.isAccepted(''), isFalse);
     });
-
-    test('accepts a single-letter word when length is one', () {
-      final constraint = ConstraintLength(1);
-
-      expect(constraint.isAccepted('a'), isTrue);
-    });
-
-    test('ignores surrounding whitespace when measuring length', () {
-      final constraint = ConstraintLength(5);
-
-      expect(constraint.isAccepted('  apple  '), isTrue);
-    });
   });
-
-  // ==========================================
-  // 6. CONSTRAINT COMBINED
-  // ==========================================
-  //
-  // See the note below before adding this group.
 }

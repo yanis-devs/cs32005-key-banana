@@ -1,5 +1,10 @@
-package com.example.pantry_app
+package com.sel.kbanana
 
-import io.flutter.embedding.android.FlutterActivity
+// Old setup:
+// import io.flutter.embedding.android.FlutterActivity
+// class MainActivity : FlutterActivity()
 
-class MainActivity : FlutterActivity()
+// New setup for local_auth:
+import io.flutter.embedding.android.FlutterFragmentActivity
+
+class MainActivity : FlutterFragmentActivity()
