@@ -145,26 +145,36 @@ class AudioService {
   Future<void> init() async {
     if (_initialised || _disposed) return;
     _initialised = true;
+
+    // Let our players overlap (tick + heartbeat + ambience) without Android
+    // audio focus pausing one when another starts.
+    final ctx = AudioContextConfig(
+      focus: AudioContextConfigFocus.mixWithOthers,
+    ).build();
+
     try {
-      // Let our players overlap (tick + heartbeat + ambience) without Android
-      // audio focus pausing one when another starts.
-      await AudioPlayer.global.setAudioContext(
-        AudioContextConfig(focus: AudioContextConfigFocus.mixWithOthers)
-            .build(),
-      );
+      await AudioPlayer.global.setAudioContext(ctx);
     } catch (e) {
-      debugPrint('Could not set the audio context: $e');
+      debugPrint('Could not set the global audio context: $e');
     }
+
+    // Apply to each player too: they were created before the global call.
+    for (final p in _allPlayers) {
+      await _safe(() => p.setAudioContext(ctx));
+    }
+
     try {
       await AudioCache.instance.loadAll(_allAssets);
     } catch (e) {
       debugPrint('Could not preload sounds: $e');
     }
+
     // The click uses low-latency mode. Tick and heartbeat use the normal media
     // player so they can sound at the same time.
     await _safe(() => _clickPlayer.setPlayerMode(PlayerMode.lowLatency));
     await _safe(() => _tickPlayer.setPlayerMode(PlayerMode.mediaPlayer));
     await _safe(() => _heartbeatPlayer.setPlayerMode(PlayerMode.mediaPlayer));
+
     // ReleaseMode.stop keeps the file loaded after it ends, so replaying it
     // is instant. The ambience loops seamlessly.
     for (final p in [
@@ -177,6 +187,7 @@ class AudioService {
       await _safe(() => p.setReleaseMode(ReleaseMode.stop));
     }
     await _safe(() => _ambiencePlayer.setReleaseMode(ReleaseMode.loop));
+
     // Natural end of the opening jingle (a manual stop does not fire this).
     _openingCompleteSub = _openingPlayer.onPlayerComplete.listen(
       (_) => _finishOpening(true),
@@ -441,7 +452,7 @@ class AudioService {
 
   /// Resume only sounds that were playing before the app lost focus.
   Future<void> resumeForAppForeground() async {
-    if (_disposed || _appInForeground) return;
+    if (_disposed || !_appInForeground) return;
 
     _appInForeground = true;
 

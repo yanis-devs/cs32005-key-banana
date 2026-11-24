@@ -36,7 +36,7 @@ const Set<int> kTimeAnnouncements = {5, 3};
 /// Heartbeat volume (0.0 to 1.0) at each whole second left. One beat per
 /// second, from 6 down to 1. Seconds not listed have no heartbeat.
 const Map<int, double> kHeartbeatVolumes = {
-  6: 0.05, // faint
+  6: 0.15, // faint
   5: 0.35, // a bit more audible
   4: 0.40, // clearly audible
   3: 0.50, // slightly below default
