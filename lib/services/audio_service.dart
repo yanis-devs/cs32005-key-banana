@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 /// Owns every sound in the app. Plain class, no Flutter widgets: create one
 /// in main(), call [init], and pass it down through constructors like the
@@ -158,8 +159,8 @@ class AudioService {
       debugPrint('Could not set the global audio context: $e');
     }
 
-    // Apply to each player too: they were created before the global call.
-    for (final p in _allPlayers) {
+    // Apply to tickPlayer and heartbeatPlayer.
+    for (final p in [_tickPlayer, _heartbeatPlayer]) {
       await _safe(() => p.setAudioContext(ctx));
     }
 
@@ -267,7 +268,14 @@ class AudioService {
   /// Starts or resumes the ambience right now, unless the app is in the
   /// background, in which case it is only noted as pending.
   Future<void> _beginAmbience() async {
+    debugPrint('ambience: fg=$_appInForeground state=${_ambiencePlayer.state} muted=$_muted');
     if (_disposed) return;
+
+    // Trust the real lifecycle state, not the flag, which can get stuck.
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (lifecycle == null || lifecycle == AppLifecycleState.resumed) {
+      _appInForeground = true;
+    }
 
     if (!_appInForeground) {
       _ambiencePendingWhileBackground = true;
